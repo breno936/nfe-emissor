@@ -4,7 +4,7 @@ require 'vendor/autoload.php';
 use NFePHP\NFe\Make;
 use NFePHP\NFe\Tools;
 use NFePHP\Common\Certificate;
-
+use NFePHP\DA\NFe\Danfe; // <- para o PDF DANFE
 
 function o(array $arr): stdClass {
     return (object) $arr;
@@ -216,66 +216,60 @@ $nfe->taginfAdic(o([
 // =====================
 // FINALIZAÇÃO
 // =====================
-
-// Gera e assina XML
 $xml = $nfe->getXML();
 $xmlAssinado = $tools->signNFe($xml);
 
-// Envia p/ SEFAZ
 $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
-// Monta o nfeProc
 $xmlProc = montaProcNFe($xmlAssinado, $retorno);
 
-// Salva XML final autorizado
-$chave = substr(md5($xmlProc), 0, 10); // ou use a chave da NFe extraída
+// Salva XML autorizado
+$chave = substr(md5($xmlProc), 0, 10);
+if (!is_dir(__DIR__ . "/notas")) {
+    mkdir(__DIR__ . "/notas", 0777, true);
+}
 file_put_contents(__DIR__ . "/notas/nfe-autorizada-$chave.xml", $xmlProc);
 
-// Resposta JSON
-echo json_encode([
-    "status" => "ok",
-    "xmlProc" => base64_encode($xmlProc),
-    "retorno" => $retorno
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+// === Gerar DANFE PDF ===
+try {
+    $danfe = new Danfe($xmlProc);
+    $pdf = $danfe->render();
 
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="danfe.pdf"');
+    echo $pdf;
+    exit;
 
-
-
-
+} catch (\Exception $e) {
+    echo json_encode([
+        "status" => "erro",
+        "mensagem" => $e->getMessage()
+    ]);
+}
 
 // --- Junta XML assinado + protocolo em um nfeProc ---
 function montaProcNFe(string $xmlAssinado, string $retorno): string
 {
-    // Extrai o protocolo <protNFe> do retorno da SEFAZ
     $domRet = new DOMDocument();
     $domRet->loadXML($retorno);
     $protNFe = $domRet->getElementsByTagName("protNFe")->item(0);
 
     if (!$protNFe) {
-        throw new Exception("Protocolo de autorização não encontrado no retorno da SEFAZ.");
+        throw new Exception("Protocolo de autorização não encontrado.");
     }
 
-    // Extrai a NFe assinada
     $domNFe = new DOMDocument();
-    $domNFe->preserveWhiteSpace = false;
-    $domNFe->formatOutput = false;
     $domNFe->loadXML($xmlAssinado);
-
     $nfe = $domNFe->getElementsByTagName("NFe")->item(0);
 
-    // Cria o nfeProc
     $domProc = new DOMDocument("1.0", "UTF-8");
-    $domProc->formatOutput = false;
-
     $nfeProc = $domProc->createElement("nfeProc");
     $nfeProc->setAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
     $nfeProc->setAttribute("versao", "4.00");
 
-    // Importa a NFe e o protNFe para dentro do nfeProc
     $nfeProc->appendChild($domProc->importNode($nfe, true));
     $nfeProc->appendChild($domProc->importNode($protNFe, true));
-
     $domProc->appendChild($nfeProc);
 
     return $domProc->saveXML();
