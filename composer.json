@@ -1,0 +1,19 @@
+{
+    "name": "flb1ca/emissor-nfe",
+    "description": "Emissor de NF-e com sped-nfe",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "Flb1ca\\EmissorNfe\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Breno"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "nfephp-org/sped-nfe": "^5.1"
+    }
+}

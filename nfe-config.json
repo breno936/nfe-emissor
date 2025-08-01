@@ -1,0 +1,12 @@
+{
+  "atualizar_automatamente": true,
+  "tpAmb": 2,
+  "razaosocial": "EMPRESA DE TESTE LTDA",
+  "cnpj": "50820024000165",
+  "siglaUF": "SP",
+  "schemes": "PL_009_V4",
+  "versao": "4.00",
+  "tokenIBPT": "",
+  "certPfx": "certs/certificado-cantina.pfx",
+  "certPassword": "12345678Mc"
+}
