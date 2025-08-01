@@ -9,22 +9,41 @@ function o(array $arr): stdClass {
     return (object) $arr;
 }
 
-// Lê configuração
-$configJson = file_get_contents(__DIR__ . '/nfe-config.json');
-$config = json_decode($configJson);
+// =====================
+// CONFIGURAÇÕES
+// =====================
+$config = [
+    "atualizar_automaticamente" => true,
+    "tpAmb" => getenv('NFE_TPAMB') ?: 2, // 2 = Homologação | 1 = Produção
+    "razaosocial" => getenv('NFE_RAZAOSOCIAL') ?: "EMPRESA DE TESTE LTDA",
+    "cnpj" => getenv('NFE_CNPJ') ?: "99999999000199",
+    "siglaUF" => getenv('NFE_SIGLA_UF') ?: "SP",
+    "schemes" => getenv('NFE_SCHEMA') ?: "PL_009_V4",
+    "versao" => getenv('NFE_VERSION') ?: "4.00",
+    "tokenIBPT" => "",
+    "certPfx" => "certs/certificado-cantina.pfx", // Mantido na pasta
+    "certPassword" => getenv('NFE_CERT_PASSWORD') ?: "12345678Mc"
+];
+$configJson = json_encode($config);
 
-// Carrega certificado digital
-$certificado = file_get_contents(__DIR__ . '/' . $config->certPfx);
-$certificate = Certificate::readPfx($certificado, $config->certPassword);
+// =====================
+// CERTIFICADO
+// =====================
+$certificado = file_get_contents(__DIR__ . "/" . $config['certPfx']);
+$certificate = Certificate::readPfx($certificado, $config['certPassword']);
 
-// Instancia Tools (responsável por comunicação com SEFAZ)
+// =====================
+// TOOLS (comunicação SEFAZ)
+// =====================
 $tools = new Tools($configJson, $certificate);
-$tools->model('55');
+$tools->model('55'); // NF-e modelo 55
 
-// Recebe dados do pedido via POST JSON
+// =====================
+// RECEBE DADOS DO FRONTEND (JSON)
+// =====================
 $body = json_decode(file_get_contents("php://input"), true);
 
-// Exemplo de produto vindo do frontend
+// Produto de exemplo
 $produto = $body['produto'] ?? [
     'cProd' => '001',
     'xProd' => 'Produto Teste',
@@ -36,14 +55,12 @@ $produto = $body['produto'] ?? [
 ];
 
 // =====================
-// Montagem da NF-e
+// MONTAGEM DA NF-E
 // =====================
 $nfe = new Make();
 
 // Cabeçalho
-$nfe->taginfNFe(o([
-    'versao' => '4.00'
-]));
+$nfe->taginfNFe(o(['versao' => '4.00']));
 
 // Identificação
 $nfe->tagide(o([
@@ -56,11 +73,11 @@ $nfe->tagide(o([
     'dhEmi' => date('c'),
     'tpNF' => 1,
     'idDest' => 1,
-    'cMunFG' => '3550308',
+    'cMunFG' => getenv('NFE_COD_MUNICIPIO') ?: '3550308',
     'tpImp' => 1,
     'tpEmis' => 1,
     'cDV' => 0,
-    'tpAmb' => 2, // 2 = Homologação
+    'tpAmb' => $config['tpAmb'],
     'finNFe' => 1,
     'indFinal' => 1,
     'indPres' => 1,
@@ -70,25 +87,25 @@ $nfe->tagide(o([
 
 // Emitente
 $nfe->tagemit(o([
-    'CNPJ' => $config->cnpj,
-    'xNome' => $config->razaosocial,
-    'xFant' => $config->fantasia,
-    'IE' => $config->ie,
+    'CNPJ' => $config['cnpj'],
+    'xNome' => $config['razaosocial'],
+    'xFant' => getenv('NFE_FANTASIA') ?: 'EMPRESA TESTE',
+    'IE' => getenv('NFE_IE') ?: '123456789',
     'CRT' => 3
 ]));
 
 // Endereço emitente
 $nfe->tagenderEmit(o([
-    'xLgr' => $config->endereco,
-    'nro' => $config->numero,
-    'xBairro' => $config->bairro,
-    'cMun' => $config->cMun,
-    'xMun' => $config->xMun,
-    'UF' => $config->UF,
-    'CEP' => $config->CEP,
+    'xLgr' => getenv('NFE_ENDERECO') ?: 'Rua Exemplo',
+    'nro' => getenv('NFE_NUMERO') ?: '1000',
+    'xBairro' => getenv('NFE_BAIRRO') ?: 'Centro',
+    'cMun' => getenv('NFE_COD_MUNICIPIO') ?: '3550308',
+    'xMun' => getenv('NFE_CIDADE') ?: 'São Paulo',
+    'UF' => $config['siglaUF'],
+    'CEP' => getenv('NFE_CEP') ?: '01001000',
     'cPais' => '1058',
     'xPais' => 'Brasil',
-    'fone' => $config->fone
+    'fone' => getenv('NFE_FONE') ?: '11999999999'
 ]));
 
 // Destinatário
@@ -132,33 +149,33 @@ $nfe->tagprod(o([
 ]));
 
 // Impostos
+$valorTotal = bcmul($produto['qCom'], $produto['vUnCom'], 2);
 $nfe->tagimposto(o(['item' => 1]));
 $nfe->tagICMS(o([
     'item' => 1,
     'orig' => 0,
     'CST' => '00',
     'modBC' => 0,
-    'vBC' => bcmul($produto['qCom'], $produto['vUnCom'], 2),
+    'vBC' => $valorTotal,
     'pICMS' => '18.00',
-    'vICMS' => bcmul($produto['qCom'], $produto['vUnCom'], 2) * 0.18
+    'vICMS' => $valorTotal * 0.18
 ]));
 $nfe->tagPIS(o([
     'item' => 1,
     'CST' => '01',
-    'vBC' => bcmul($produto['qCom'], $produto['vUnCom'], 2),
+    'vBC' => $valorTotal,
     'pPIS' => '1.65',
-    'vPIS' => bcmul($produto['qCom'], $produto['vUnCom'], 2) * 0.0165
+    'vPIS' => $valorTotal * 0.0165
 ]));
 $nfe->tagCOFINS(o([
     'item' => 1,
     'CST' => '01',
-    'vBC' => bcmul($produto['qCom'], $produto['vUnCom'], 2),
+    'vBC' => $valorTotal,
     'pCOFINS' => '7.60',
-    'vCOFINS' => bcmul($produto['qCom'], $produto['vUnCom'], 2) * 0.076
+    'vCOFINS' => $valorTotal * 0.076
 ]));
 
 // Totais
-$valorTotal = bcmul($produto['qCom'], $produto['vUnCom'], 2);
 $nfe->tagICMSTot(o([
     'vBC' => $valorTotal,
     'vICMS' => $valorTotal * 0.18,
@@ -176,7 +193,7 @@ $nfe->tagICMSTot(o([
     'vCOFINS' => $valorTotal * 0.076,
     'vOutro' => '0.00',
     'vNF' => $valorTotal,
-    'vTotTrib' => '0.00' // se não calcular tributos aproximados
+    'vTotTrib' => '0.00'
 ]));
 
 // Transporte
@@ -196,24 +213,24 @@ $nfe->taginfAdic(o([
 ]));
 
 // =====================
-// Finalização
+// FINALIZAÇÃO
 // =====================
 
-// Gera XML e assina
+// Gera e assina XML
 $xml = $nfe->getXML();
 $xmlAssinado = $tools->signNFe($xml);
 
-// Envia para SEFAZ
+// Envia p/ SEFAZ
 $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
 // Junta protocolo
 $xmlAutorizado = $tools->addProt($xmlAssinado, $retorno);
 
-// Salva no servidor
+// Salva localmente
 file_put_contents(__DIR__ . '/nfe-autorizada.xml', $xmlAutorizado);
 
-// Retorna resposta JSON para frontend
+// Retorna resposta em JSON
 header('Content-Type: application/json');
 echo json_encode([
     'status' => 'ok',
