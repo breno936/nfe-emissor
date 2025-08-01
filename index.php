@@ -14,14 +14,14 @@ function o(array $arr): stdClass {
 // =====================
 $config = [
     "atualizar_automaticamente" => true,
-    "tpAmb" => getenv('NFE_TPAMB') ?: 2, // 2 = Homologação | 1 = Produção
+    "tpAmb" => (int) getenv('NFE_TPAMB') ?: 2, // forçar int
     "razaosocial" => getenv('NFE_RAZAOSOCIAL') ?: "EMPRESA DE TESTE LTDA",
     "cnpj" => getenv('NFE_CNPJ') ?: "99999999000199",
     "siglaUF" => getenv('NFE_SIGLA_UF') ?: "SP",
     "schemes" => getenv('NFE_SCHEMA') ?: "PL_009_V4",
     "versao" => getenv('NFE_VERSION') ?: "4.00",
     "tokenIBPT" => "",
-    "certPfx" => "certs/certificado-cantina.pfx", // Mantido na pasta
+    "certPfx" => "certs/certificado-cantina.pfx",
     "certPassword" => getenv('NFE_CERT_PASSWORD') ?: "12345678Mc"
 ];
 $configJson = json_encode($config);
