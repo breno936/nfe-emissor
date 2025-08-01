@@ -225,13 +225,58 @@ $xmlAssinado = $tools->signNFe($xml);
 $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
-// O retorno já é o XML autorizado (ou rejeitado), basta salvar
-file_put_contents(__DIR__ . '/nfe-retorno.xml', $retorno);
+// Monta o nfeProc
+$xmlProc = montaProcNFe($xmlAssinado, $retorno);
 
-// Retorna resposta em JSON
-header('Content-Type: application/json');
+// Salva XML final autorizado
+$chave = substr(md5($xmlProc), 0, 10); // ou use a chave da NFe extraída
+file_put_contents(__DIR__ . "/notas/nfe-autorizada-$chave.xml", $xmlProc);
+
+// Resposta JSON
 echo json_encode([
-    'status' => 'ok',
-    'retorno' => $retorno,
-    'xmlAssinado' => base64_encode($xmlAssinado)
+    "status" => "ok",
+    "xmlProc" => base64_encode($xmlProc),
+    "retorno" => $retorno
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+
+
+
+
+
+// --- Junta XML assinado + protocolo em um nfeProc ---
+function montaProcNFe(string $xmlAssinado, string $retorno): string
+{
+    // Extrai o protocolo <protNFe> do retorno da SEFAZ
+    $domRet = new DOMDocument();
+    $domRet->loadXML($retorno);
+    $protNFe = $domRet->getElementsByTagName("protNFe")->item(0);
+
+    if (!$protNFe) {
+        throw new Exception("Protocolo de autorização não encontrado no retorno da SEFAZ.");
+    }
+
+    // Extrai a NFe assinada
+    $domNFe = new DOMDocument();
+    $domNFe->preserveWhiteSpace = false;
+    $domNFe->formatOutput = false;
+    $domNFe->loadXML($xmlAssinado);
+
+    $nfe = $domNFe->getElementsByTagName("NFe")->item(0);
+
+    // Cria o nfeProc
+    $domProc = new DOMDocument("1.0", "UTF-8");
+    $domProc->formatOutput = false;
+
+    $nfeProc = $domProc->createElement("nfeProc");
+    $nfeProc->setAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
+    $nfeProc->setAttribute("versao", "4.00");
+
+    // Importa a NFe e o protNFe para dentro do nfeProc
+    $nfeProc->appendChild($domProc->importNode($nfe, true));
+    $nfeProc->appendChild($domProc->importNode($protNFe, true));
+
+    $domProc->appendChild($nfeProc);
+
+    return $domProc->saveXML();
+}
