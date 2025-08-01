@@ -225,7 +225,7 @@ $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
 // Junta protocolo
-$xmlAutorizado = $tools->addProt($xmlAssinado, $retorno);
+$xmlAutorizado = ReturnNFeFactory::create($xmlAssinado, $retorno);
 
 // Salva localmente
 file_put_contents(__DIR__ . '/nfe-autorizada.xml', $xmlAutorizado);
