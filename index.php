@@ -5,6 +5,7 @@ use NFePHP\NFe\Make;
 use NFePHP\NFe\Tools;
 use NFePHP\Common\Certificate;
 
+
 function o(array $arr): stdClass {
     return (object) $arr;
 }
@@ -224,16 +225,13 @@ $xmlAssinado = $tools->signNFe($xml);
 $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
 $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
-// Junta protocolo
-$xmlAutorizado = ReturnNFeFactory::create($xmlAssinado, $retorno);
-
-// Salva localmente
-file_put_contents(__DIR__ . '/nfe-autorizada.xml', $xmlAutorizado);
+// O retorno já é o XML autorizado (ou rejeitado), basta salvar
+file_put_contents(__DIR__ . '/nfe-retorno.xml', $retorno);
 
 // Retorna resposta em JSON
 header('Content-Type: application/json');
 echo json_encode([
     'status' => 'ok',
     'retorno' => $retorno,
-    'xmlAutorizado' => base64_encode($xmlAutorizado)
+    'xmlAssinado' => base64_encode($xmlAssinado)
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
