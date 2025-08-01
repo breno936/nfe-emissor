@@ -15,6 +15,7 @@ class ComposerStaticInitc0048c40caad627afa41a9747e6fcfa6
         array (
             'NFePHP\\NFe\\' => 11,
             'NFePHP\\Gtin\\' => 12,
+            'NFePHP\\DA\\' => 10,
             'NFePHP\\Common\\' => 14,
         ),
         'J' => 
@@ -24,6 +25,11 @@ class ComposerStaticInitc0048c40caad627afa41a9747e6fcfa6
         'F' => 
         array (
             'Flb1ca\\EmissorNfe\\' => 18,
+        ),
+        'C' => 
+        array (
+            'Com\\Tecnick\\Color\\' => 18,
+            'Com\\Tecnick\\Barcode\\' => 20,
         ),
     );
 
@@ -40,6 +46,10 @@ class ComposerStaticInitc0048c40caad627afa41a9747e6fcfa6
         array (
             0 => __DIR__ . '/..' . '/nfephp-org/sped-gtin/src',
         ),
+        'NFePHP\\DA\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/nfephp-org/sped-da/src',
+        ),
         'NFePHP\\Common\\' => 
         array (
             0 => __DIR__ . '/..' . '/nfephp-org/sped-common/src',
@@ -51,6 +61,14 @@ class ComposerStaticInitc0048c40caad627afa41a9747e6fcfa6
         'Flb1ca\\EmissorNfe\\' => 
         array (
             0 => __DIR__ . '/../..' . '/src',
+        ),
+        'Com\\Tecnick\\Color\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/tecnickcom/tc-lib-color/src',
+        ),
+        'Com\\Tecnick\\Barcode\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/tecnickcom/tc-lib-barcode/src',
         ),
     );
 

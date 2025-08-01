@@ -4,7 +4,7 @@ require 'vendor/autoload.php';
 use NFePHP\NFe\Make;
 use NFePHP\NFe\Tools;
 use NFePHP\Common\Certificate;
-use NFePHP\DA\NFe\Danfe; // <- para o PDF DANFE
+use NFePHP\DA\NFe\Danfe;
 
 function o(array $arr): stdClass {
     return (object) $arr;
