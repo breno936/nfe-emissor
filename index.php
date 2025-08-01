@@ -236,6 +236,9 @@ try {
     $danfe = new Danfe($xmlProc);
     $pdf = $danfe->render();
 
+    // limpar qualquer saída que já tenha ido
+    if (ob_get_length()) ob_end_clean();
+
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="danfe.pdf"');
     echo $pdf;
