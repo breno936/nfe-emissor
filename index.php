@@ -6,6 +6,9 @@ use NFePHP\NFe\Tools;
 use NFePHP\Common\Certificate;
 use NFePHP\DA\NFe\Danfe;
 
+error_reporting(E_ERROR | E_PARSE);
+ini_set('display_errors', 0);
+
 function o(array $arr): stdClass {
     return (object) $arr;
 }
