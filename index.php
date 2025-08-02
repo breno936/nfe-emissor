@@ -13,17 +13,6 @@ function o(array $arr): stdClass {
     return (object) $arr;
 }
 
-// Permitir requisições de qualquer origem
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-
-// Se for uma requisição OPTIONS (pré-flight), só retorna OK
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
 // =====================
 // CONFIGURAÇÕES
 // =====================
@@ -58,15 +47,8 @@ $tools->model('55');
 // =====================
 $body = json_decode(file_get_contents("php://input"), true);
 
-$produto = $body['produto'] ?? [
-    'cProd' => '001',
-    'xProd' => 'Produto Teste',
-    'NCM'   => '61091000',
-    'CFOP'  => '5102',
-    'uCom'  => 'UN',
-    'qCom'  => '1.0000',
-    'vUnCom'=> '100.00'
-];
+// Lista de produtos
+$produtos = $body['produtos'] ?? [];
 
 // =====================
 // MONTAGEM DA NF-E
@@ -143,70 +125,92 @@ $nfe->tagenderDest(o([
     'fone' => $body['cliente']['endereco']['fone'] ?? '11999999999'
 ]));
 
-// Produto
-$nfe->tagprod(o([
-    'item' => 1,
-    'cProd' => $produto['cProd'],
-    'cEAN' => 'SEM GTIN',
-    'xProd' => $produto['xProd'],
-    'NCM' => $produto['NCM'],
-    'CFOP' => $produto['CFOP'],
-    'uCom' => $produto['uCom'],
-    'qCom' => $produto['qCom'],
-    'vUnCom' => $produto['vUnCom'],
-    'vProd' => bcmul($produto['qCom'], $produto['vUnCom'], 2),
-    'cEANTrib' => 'SEM GTIN',
-    'uTrib' => $produto['uCom'],
-    'qTrib' => $produto['qCom'],
-    'vUnTrib' => $produto['vUnCom'],
-    'indTot' => 1
-]));
+// ---------------------
+// Produtos + Impostos
+// ---------------------
+$itemNum = 1;
+$totalProdutos = 0;
+$totalICMS = 0;
+$totalPIS = 0;
+$totalCOFINS = 0;
 
-// Impostos
-$valorTotal = bcmul($produto['qCom'], $produto['vUnCom'], 2);
-$nfe->tagimposto(o(['item' => 1]));
-$nfe->tagICMS(o([
-    'item' => 1,
-    'orig' => 0,
-    'CST' => '00',
-    'modBC' => 0,
-    'vBC' => $valorTotal,
-    'pICMS' => '18.00',
-    'vICMS' => $valorTotal * 0.18
-]));
-$nfe->tagPIS(o([
-    'item' => 1,
-    'CST' => '01',
-    'vBC' => $valorTotal,
-    'pPIS' => '1.65',
-    'vPIS' => $valorTotal * 0.0165
-]));
-$nfe->tagCOFINS(o([
-    'item' => 1,
-    'CST' => '01',
-    'vBC' => $valorTotal,
-    'pCOFINS' => '7.60',
-    'vCOFINS' => $valorTotal * 0.076
-]));
+foreach ($produtos as $p) {
+    $qCom = number_format((float)$p['qCom'], 4, '.', '');
+    $vUnCom = number_format((float)$p['vUnCom'], 2, '.', '');
+    $valorTotal = bcmul($qCom, $vUnCom, 2);
+
+    // Produto
+    $nfe->tagprod(o([
+        'item' => $itemNum,
+        'cProd' => $p['cProd'],
+        'cEAN' => $p['cEAN'] ?? 'SEM GTIN',
+        'xProd' => $p['xProd'],
+        'NCM' => $p['NCM'],
+        'CFOP' => $p['CFOP'],
+        'uCom' => $p['uCom'],
+        'qCom' => $qCom,
+        'vUnCom' => $vUnCom,
+        'vProd' => $valorTotal,
+        'cEANTrib' => $p['cEANTrib'] ?? 'SEM GTIN',
+        'uTrib' => $p['uCom'],
+        'qTrib' => $qCom,
+        'vUnTrib' => $vUnCom,
+        'indTot' => 1
+    ]));
+
+    // Impostos
+    $nfe->tagimposto(o(['item' => $itemNum]));
+    $nfe->tagICMS(o([
+        'item' => $itemNum,
+        'orig' => $p['orig'] ?? 0,
+        'CST' => $p['CST'] ?? '00',
+        'modBC' => 0,
+        'vBC' => $valorTotal,
+        'pICMS' => $p['pICMS'] ?? '18.00',
+        'vICMS' => $valorTotal * (($p['pICMS'] ?? 18) / 100)
+    ]));
+    $nfe->tagPIS(o([
+        'item' => $itemNum,
+        'CST' => $p['cst_pis'] ?? '01',
+        'vBC' => $valorTotal,
+        'pPIS' => $p['pPIS'] ?? '1.65',
+        'vPIS' => $valorTotal * (($p['pPIS'] ?? 1.65) / 100)
+    ]));
+    $nfe->tagCOFINS(o([
+        'item' => $itemNum,
+        'CST' => $p['cst_cofins'] ?? '01',
+        'vBC' => $valorTotal,
+        'pCOFINS' => $p['pCOFINS'] ?? '7.60',
+        'vCOFINS' => $valorTotal * (($p['pCOFINS'] ?? 7.60) / 100)
+    ]));
+
+    // Acumuladores
+    $totalProdutos += $valorTotal;
+    $totalICMS += $valorTotal * (($p['pICMS'] ?? 18) / 100);
+    $totalPIS += $valorTotal * (($p['pPIS'] ?? 1.65) / 100);
+    $totalCOFINS += $valorTotal * (($p['pCOFINS'] ?? 7.60) / 100);
+
+    $itemNum++;
+}
 
 // Totais
 $nfe->tagICMSTot(o([
-    'vBC' => $valorTotal,
-    'vICMS' => $valorTotal * 0.18,
+    'vBC' => $totalProdutos,
+    'vICMS' => $totalICMS,
     'vICMSDeson' => '0.00',
     'vFCP' => '0.00',
     'vBCST' => '0.00',
     'vST' => '0.00',
-    'vProd' => $valorTotal,
+    'vProd' => $totalProdutos,
     'vFrete' => '0.00',
     'vSeg' => '0.00',
     'vDesc' => '0.00',
     'vII' => '0.00',
     'vIPI' => '0.00',
-    'vPIS' => $valorTotal * 0.0165,
-    'vCOFINS' => $valorTotal * 0.076,
+    'vPIS' => $totalPIS,
+    'vCOFINS' => $totalCOFINS,
     'vOutro' => '0.00',
-    'vNF' => $valorTotal,
+    'vNF' => $totalProdutos,
     'vTotTrib' => '0.00'
 ]));
 
@@ -218,10 +222,10 @@ $nfe->tagpag(o(['vTroco' => '0.00']));
 $nfe->tagdetPag(o([
     'indPag' => 0,
     'tPag' => '01',
-    'vPag' => $valorTotal
+    'vPag' => $totalProdutos
 ]));
 
-// Informações adicionais
+// Info adicional
 $nfe->taginfAdic(o([
     'infCpl' => 'NF-e emitida em ambiente de homologação. Sem valor fiscal.'
 ]));
