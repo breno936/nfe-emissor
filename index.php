@@ -13,6 +13,17 @@ function o(array $arr): stdClass {
     return (object) $arr;
 }
 
+// Permitir requisições de qualquer origem
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+
+// Se for uma requisição OPTIONS (pré-flight), só retorna OK
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 // =====================
 // CONFIGURAÇÕES
 // =====================
