@@ -18,7 +18,7 @@ function o(array $arr): stdClass {
 // =====================
 $config = [
     "atualizar_automaticamente" => true,
-    "tpAmb" => (int) getenv('NFE_TPAMB') ?: 2, // forçar int
+    "tpAmb" => (int) getenv('NFE_TPAMB') ?: 2,
     "razaosocial" => getenv('NFE_RAZAOSOCIAL') ?: "EMPRESA DE TESTE LTDA",
     "cnpj" => getenv('NFE_CNPJ') ?: "99999999000199",
     "siglaUF" => getenv('NFE_SIGLA_UF') ?: "SP",
@@ -40,14 +40,13 @@ $certificate = Certificate::readPfx($certificado, $config['certPassword']);
 // TOOLS (comunicação SEFAZ)
 // =====================
 $tools = new Tools($configJson, $certificate);
-$tools->model('55'); // NF-e modelo 55
+$tools->model('55');
 
 // =====================
-// RECEBE DADOS DO FRONTEND (JSON)
+// RECEBE DADOS DO FRONTEND
 // =====================
 $body = json_decode(file_get_contents("php://input"), true);
 
-// Produto de exemplo
 $produto = $body['produto'] ?? [
     'cProd' => '001',
     'xProd' => 'Produto Teste',
@@ -219,42 +218,34 @@ $nfe->taginfAdic(o([
 // =====================
 // FINALIZAÇÃO
 // =====================
-$xml = $nfe->getXML();
-$xmlAssinado = $tools->signNFe($xml);
-
-$idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
-$retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
-
-$xmlProc = montaProcNFe($xmlAssinado, $retorno);
-
-// Salva XML autorizado
-$chave = substr(md5($xmlProc), 0, 10);
-if (!is_dir(__DIR__ . "/notas")) {
-    mkdir(__DIR__ . "/notas", 0777, true);
-}
-file_put_contents(__DIR__ . "/notas/nfe-autorizada-$chave.xml", $xmlProc);
-
-// === Gerar DANFE PDF ===
 try {
+    $xml = $nfe->getXML();
+    $xmlAssinado = $tools->signNFe($xml);
+
+    $idLote = str_pad(mt_rand(1, 999999999999999), 15, '0', STR_PAD_LEFT);
+    $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
+
+    $xmlProc = montaProcNFe($xmlAssinado, $retorno);
+
+    $chave = substr(md5($xmlProc), 0, 10);
+
     $danfe = new Danfe($xmlProc);
     $pdf = $danfe->render();
 
-    // limpar qualquer saída que já tenha ido
-    if (ob_get_length()) ob_end_clean();
-
-    header('Content-Type: application/pdf');
-    header('Content-Disposition: inline; filename="danfe.pdf"');
-    echo $pdf;
-    exit;
-
-} catch (\Exception $e) {
+    echo json_encode([
+        "status" => "sucesso",
+        "chave" => $chave,
+        "xmlBase64" => base64_encode($xmlProc),
+        "danfeBase64" => base64_encode($pdf)
+    ]);
+} catch (Exception $e) {
     echo json_encode([
         "status" => "erro",
         "mensagem" => $e->getMessage()
     ]);
 }
 
-// --- Junta XML assinado + protocolo em um nfeProc ---
+// --- Junta XML assinado + protocolo ---
 function montaProcNFe(string $xmlAssinado, string $retorno): string
 {
     $domRet = new DOMDocument();
