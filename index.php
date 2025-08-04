@@ -17,6 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // -------------------------
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 
+echo $path;
+
 // /healthz: responde rápido para ping/uptime
 if ($path === '/healthz') {
     http_response_code(200);
