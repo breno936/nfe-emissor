@@ -1,4 +1,53 @@
 <?php
+// -------------------------
+// HEADERS + CORS + OPTIONS
+// -------------------------
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// -------------------------
+// ROTAS LEVES (antes de carregar libs)
+// -------------------------
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+// /healthz: responde rápido para ping/uptime
+if ($path === '/healthz') {
+    http_response_code(200);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'ok';
+    exit();
+}
+
+// Opcional: GET /status (diagnóstico simples)
+if ($path === '/status' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    http_response_code(200);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode([
+        'status' => 'up',
+        'time' => date('c'),
+        'php' => PHP_VERSION
+    ]);
+    exit();
+}
+
+// A partir daqui apenas tratamos POST / (NF-e)
+if (!($path === '/' && $_SERVER['REQUEST_METHOD'] === 'POST')) {
+    http_response_code(405);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['status' => 'erro', 'mensagem' => 'Método/rota não suportados']);
+    exit();
+}
+
+// -------------------------
+// AQUI COMEÇA SUA LÓGICA NF-e
+// -------------------------
 require 'vendor/autoload.php';
 
 use NFePHP\NFe\Make;
@@ -9,20 +58,7 @@ use NFePHP\DA\NFe\Danfe;
 error_reporting(E_ERROR | E_PARSE);
 ini_set('display_errors', 0);
 
-function o(array $arr): stdClass {
-    return (object) $arr;
-}
-
-// Permitir requisições de qualquer origem
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-
-// Responder pré-flight OPTIONS
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
+function o(array $arr): stdClass { return (object) $arr; }
 
 // =====================
 // CONFIGURAÇÕES
@@ -42,24 +78,24 @@ $config = [
 $configJson = json_encode($config);
 
 // =====================
-// CERTIFICADO
+// CERTIFICADO + TOOLS
 // =====================
 $certificado = file_get_contents(__DIR__ . "/" . $config['certPfx']);
 $certificate = Certificate::readPfx($certificado, $config['certPassword']);
-
-// =====================
-// TOOLS (comunicação SEFAZ)
-// =====================
 $tools = new Tools($configJson, $certificate);
 $tools->model('55');
 
 // =====================
 // RECEBE DADOS DO FRONTEND
 // =====================
-$body = json_decode(file_get_contents("php://input"), true);
-
-// Lista de produtos
+$body = json_decode(file_get_contents("php://input"), true) ?: [];
 $produtos = $body['produtos'] ?? [];
+if (empty($produtos)) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(["status" => "erro", "mensagem" => "Nenhum produto enviado (campo 'produtos' vazio)."]);
+    exit();
+}
 
 // =====================
 // MONTAGEM DA NF-E
@@ -98,7 +134,7 @@ $nfe->tagemit(o([
     'xNome' => $config['razaosocial'],
     'xFant' => getenv('NFE_FANTASIA') ?: 'EMPRESA TESTE',
     'IE' => getenv('NFE_IE') ?: '123456789',
-    'CRT' => 3
+    'CRT' => 3 // ajuste p/ 1 se for Simples e troque ICMS->ICMSSN no loop
 ]));
 
 // Endereço emitente
@@ -136,9 +172,7 @@ $nfe->tagenderDest(o([
     'fone' => $body['cliente']['endereco']['fone'] ?? '11999999999'
 ]));
 
-// ---------------------
 // Produtos + Impostos
-// ---------------------
 $itemNum = 1;
 $totalProdutos = 0;
 $totalICMS = 0;
@@ -150,7 +184,6 @@ foreach ($produtos as $p) {
     $vUnCom = number_format((float)$p['vUnCom'], 2, '.', '');
     $valorTotal = bcmul($qCom, $vUnCom, 2);
 
-    // Produto
     $nfe->tagprod(o([
         'item' => $itemNum,
         'cProd' => $p['cProd'],
@@ -169,59 +202,61 @@ foreach ($produtos as $p) {
         'indTot' => 1
     ]));
 
-    // Impostos
     $nfe->tagimposto(o(['item' => $itemNum]));
+
+    // >>> Se usar Simples Nacional, troque este bloco por tagICMSSN (CSOSN)
     $nfe->tagICMS(o([
         'item' => $itemNum,
         'orig' => $p['orig'] ?? 0,
-        'CST' => $p['CST'] ?? '00',
-        'modBC' => 0,
+        'CST' => str_pad(preg_replace('/\D/','', (string)($p['CST'] ?? '00')), 2, '0', STR_PAD_LEFT),
+        'modBC' => 3,
         'vBC' => $valorTotal,
-        'pICMS' => $p['pICMS'] ?? '18.00',
-        'vICMS' => $valorTotal * (($p['pICMS'] ?? 18) / 100)
-    ]));
-    $nfe->tagPIS(o([
-        'item' => $itemNum,
-        'CST' => $p['cst_pis'] ?? '01',
-        'vBC' => $valorTotal,
-        'pPIS' => $p['pPIS'] ?? '1.65',
-        'vPIS' => $valorTotal * (($p['pPIS'] ?? 1.65) / 100)
-    ]));
-    $nfe->tagCOFINS(o([
-        'item' => $itemNum,
-        'CST' => $p['cst_cofins'] ?? '01',
-        'vBC' => $valorTotal,
-        'pCOFINS' => $p['pCOFINS'] ?? '7.60',
-        'vCOFINS' => $valorTotal * (($p['pCOFINS'] ?? 7.60) / 100)
+        'pICMS' => number_format((float)($p['pICMS'] ?? 18), 2, '.', ''),
+        'vICMS' => number_format((float)$valorTotal * ((float)($p['pICMS'] ?? 18) / 100), 2, '.', '')
     ]));
 
-    // Acumuladores
+    $nfe->tagPIS(o([
+        'item' => $itemNum,
+        'CST' => str_pad(preg_replace('/\D/','', (string)($p['cst_pis'] ?? '01')), 2, '0', STR_PAD_LEFT),
+        'vBC' => $valorTotal,
+        'pPIS' => number_format((float)($p['pPIS'] ?? 1.65), 2, '.', ''),
+        'vPIS' => number_format((float)$valorTotal * ((float)($p['pPIS'] ?? 1.65) / 100), 2, '.', '')
+    ]));
+
+    $nfe->tagCOFINS(o([
+        'item' => $itemNum,
+        'CST' => str_pad(preg_replace('/\D/','', (string)($p['cst_cofins'] ?? '01')), 2, '0', STR_PAD_LEFT),
+        'vBC' => $valorTotal,
+        'pCOFINS' => number_format((float)($p['pCOFINS'] ?? 7.60), 2, '.', ''),
+        'vCOFINS' => number_format((float)$valorTotal * ((float)($p['pCOFINS'] ?? 7.60) / 100), 2, '.', '')
+    ]));
+
     $totalProdutos += $valorTotal;
-    $totalICMS += $valorTotal * (($p['pICMS'] ?? 18) / 100);
-    $totalPIS += $valorTotal * (($p['pPIS'] ?? 1.65) / 100);
-    $totalCOFINS += $valorTotal * (($p['pCOFINS'] ?? 7.60) / 100);
+    $totalICMS += (float)$valorTotal * ((float)($p['pICMS'] ?? 18) / 100);
+    $totalPIS += (float)$valorTotal * ((float)($p['pPIS'] ?? 1.65) / 100);
+    $totalCOFINS += (float)$valorTotal * ((float)($p['pCOFINS'] ?? 7.60) / 100);
 
     $itemNum++;
 }
 
 // Totais
 $nfe->tagICMSTot(o([
-    'vBC' => $totalProdutos,
-    'vICMS' => $totalICMS,
+    'vBC' => number_format($totalProdutos, 2, '.', ''),
+    'vICMS' => number_format($totalICMS, 2, '.', ''),
     'vICMSDeson' => '0.00',
     'vFCP' => '0.00',
     'vBCST' => '0.00',
     'vST' => '0.00',
-    'vProd' => $totalProdutos,
+    'vProd' => number_format($totalProdutos, 2, '.', ''),
     'vFrete' => '0.00',
     'vSeg' => '0.00',
     'vDesc' => '0.00',
     'vII' => '0.00',
     'vIPI' => '0.00',
-    'vPIS' => $totalPIS,
-    'vCOFINS' => $totalCOFINS,
+    'vPIS' => number_format($totalPIS, 2, '.', ''),
+    'vCOFINS' => number_format($totalCOFINS, 2, '.', ''),
     'vOutro' => '0.00',
-    'vNF' => $totalProdutos,
+    'vNF' => number_format($totalProdutos, 2, '.', ''),
     'vTotTrib' => '0.00'
 ]));
 
@@ -233,7 +268,7 @@ $nfe->tagpag(o(['vTroco' => '0.00']));
 $nfe->tagdetPag(o([
     'indPag' => 0,
     'tPag' => '01',
-    'vPag' => $totalProdutos
+    'vPag' => number_format($totalProdutos, 2, '.', '')
 ]));
 
 // Info adicional
@@ -244,6 +279,7 @@ $nfe->taginfAdic(o([
 // =====================
 // FINALIZAÇÃO
 // =====================
+header('Content-Type: application/json; charset=UTF-8');
 try {
     $xml = $nfe->getXML();
     $xmlAssinado = $tools->signNFe($xml);
@@ -252,7 +288,6 @@ try {
     $retorno = $tools->sefazEnviaLote([$xmlAssinado], $idLote, 1);
 
     $xmlProc = montaProcNFe($xmlAssinado, $retorno);
-
     $chave = substr(md5($xmlProc), 0, 10);
 
     $danfe = new Danfe($xmlProc);
@@ -265,6 +300,7 @@ try {
         "danfeBase64" => base64_encode($pdf)
     ]);
 } catch (Exception $e) {
+    http_response_code(500);
     echo json_encode([
         "status" => "erro",
         "mensagem" => $e->getMessage()
@@ -272,15 +308,11 @@ try {
 }
 
 // --- Junta XML assinado + protocolo ---
-function montaProcNFe(string $xmlAssinado, string $retorno): string
-{
+function montaProcNFe(string $xmlAssinado, string $retorno): string {
     $domRet = new DOMDocument();
     $domRet->loadXML($retorno);
     $protNFe = $domRet->getElementsByTagName("protNFe")->item(0);
-
-    if (!$protNFe) {
-        throw new Exception("Protocolo de autorização não encontrado.");
-    }
+    if (!$protNFe) throw new Exception("Protocolo de autorização não encontrado.");
 
     $domNFe = new DOMDocument();
     $domNFe->loadXML($xmlAssinado);
@@ -290,10 +322,8 @@ function montaProcNFe(string $xmlAssinado, string $retorno): string
     $nfeProc = $domProc->createElement("nfeProc");
     $nfeProc->setAttribute("xmlns", "http://www.portalfiscal.inf.br/nfe");
     $nfeProc->setAttribute("versao", "4.00");
-
     $nfeProc->appendChild($domProc->importNode($nfe, true));
     $nfeProc->appendChild($domProc->importNode($protNFe, true));
     $domProc->appendChild($nfeProc);
-
     return $domProc->saveXML();
 }
